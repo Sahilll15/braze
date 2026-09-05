@@ -7,22 +7,10 @@ The ReAct loop is written by hand against the raw chat-completions API. No agent
 framework anywhere. Everything a framework would do for you, the transcript, the
 tool schemas, the dispatch, the stopping rules, is visible in `braze/cli.py`.
 
-```
-$ cd practice-repo
-$ braze "add a --json flag to the wc CLI so the failing tests pass, then run the tests" --yes
+![braze solving a task](docs/demo.gif)
 
-braze  ·  /Users/sahil/Desktop/Projects/toolsmith/practice-repo  ·  gpt-5.5
-
-  -> list_dir    {"path":"."}
-  -> read_file   {"file_path":"wc.py"}
-  -> read_file   {"file_path":"test_wc.py"}
-  -> edit_file   {"path":"wc.py","old_text":"import argparse\nimport sys..."}
-  -> edit_file   {"path":"wc.py","old_text":"    parser = argparse.Argum..."}
-  -> run_command {"command":"pytest -q"}
-  -> finish      {"summary":"Added a documented --json flag..."}
-
-7 turns, 10193 tokens, 13.4s
-```
+<sub>Two failing tests, one sentence of instruction, seven turns.
+[Full-quality recording](docs/demo.mp4) · [the tape that shot it](docs/demo.tape)</sub>
 
 ## Install
 
