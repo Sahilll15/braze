@@ -9,6 +9,9 @@ tool schemas, the dispatch, the stopping rules, is visible in `braze/cli.py`.
 
 ![braze solving a task](docs/demo.gif)
 
+<sub>Two failing tests, one sentence of instruction, seven turns.
+[Full-quality recording](docs/demo.mp4) · [the tape that shot it](docs/demo.tape)</sub>
+
 ## Install
 
 ```bash
