@@ -32,11 +32,20 @@ python3 -m venv venv
 cp .env.example .env      # put an OpenAI key in it
 ```
 
+The first run asks for your OpenAI key and saves it to `~/.braze/config.json`,
+owner-readable only. No key ships with this package. `OPENAI_API_KEY` in the
+environment wins over the config file if both are set.
+
 Then from any directory:
 
 ```bash
-braze "your task here"
+braze                        # interactive session
+braze "your task here"       # one task and exit
 ```
+
+In a session, the conversation carries across turns, so you can follow up with
+"why did you do that" or "undo the second change". `/clear` forgets the
+conversation, `/exit` leaves.
 
 | Flag | What it does |
 |---|---|

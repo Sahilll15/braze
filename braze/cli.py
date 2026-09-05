@@ -1,10 +1,12 @@
 import argparse
 import json
+import readline  # noqa: F401  gives input() arrow-key history
 import time
 
 from dotenv import load_dotenv
 from openai import OpenAI
 
+from .config import get_api_key
 from .tools import confine
 from .tools.edit_file import edit_file
 from .tools.finish import finish
@@ -108,26 +110,8 @@ def run_tool(name: str, raw_arguments: str) -> str:
         return f"Error: {type(exc).__name__}: {exc}"
 
 
-def main() -> int:
-    load_dotenv()
-
-    parser = argparse.ArgumentParser(prog="braze", description="A terminal coding agent.")
-    parser.add_argument("task", help="What you want done.")
-    parser.add_argument("-w", "--workspace", default=None,
-                        help="Directory the agent may touch. Defaults to the current one.")
-    parser.add_argument("-y", "--yes", action="store_true", help="Run commands without asking.")
-    parser.add_argument("-v", "--verbose", action="store_true", help="Print each tool result.")
-    args = parser.parse_args()
-
-    workspace = confine.configure(args.workspace, args.yes)
-    print(f"braze  ·  {workspace}  ·  {MODEL}\n")
-
-    client = OpenAI()
-    messages = [
-        {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "user", "content": args.task},
-    ]
-
+def run_task(client, messages, verbose: bool) -> None:
+    """Drive one task to completion, appending to `messages` in place."""
     turns = 0
     tokens = 0
     started = time.monotonic()
@@ -153,7 +137,7 @@ def main() -> int:
         messages.append(message)
 
         if not message.tool_calls:
-            print(message.content)
+            print(f"\n{message.content}")
             break
 
         done = False
@@ -162,7 +146,7 @@ def main() -> int:
             result = run_tool(call.function.name, call.function.arguments)
             messages.append({"role": "tool", "tool_call_id": call.id, "content": result})
 
-            if args.verbose or result.startswith("Error:"):
+            if verbose or result.startswith("Error:"):
                 print(f"     {result[:400]}")
 
             if call.function.name == "finish" and not result.startswith("Error:"):
@@ -171,5 +155,66 @@ def main() -> int:
         if done:
             break
 
-    print(f"\n{turns} turns, {tokens} tokens, {time.monotonic() - started:.1f}s")
+    print(f"\n\033[2m{turns} turns, {tokens} tokens, {time.monotonic() - started:.1f}s\033[0m")
+
+
+HELP = """  /help    this
+  /clear   forget the conversation, keep the session
+  /exit    leave
+"""
+
+
+def repl(client, messages, verbose: bool) -> int:
+    print("Type a task. /help for commands, /exit to leave.\n")
+    while True:
+        try:
+            line = input("\033[1m> \033[0m").strip()
+        except (EOFError, KeyboardInterrupt):
+            print("\nbye")
+            return 0
+
+        if not line:
+            continue
+        if line in {"/exit", "/quit", "exit", "quit"}:
+            print("bye")
+            return 0
+        if line == "/help":
+            print(HELP)
+            continue
+        if line == "/clear":
+            del messages[1:]
+            print("conversation cleared\n")
+            continue
+
+        messages.append({"role": "user", "content": line})
+        try:
+            run_task(client, messages, verbose)
+        except KeyboardInterrupt:
+            print("\ninterrupted")
+        print()
+
+
+def main() -> int:
+    load_dotenv()
+
+    parser = argparse.ArgumentParser(prog="braze", description="A terminal coding agent.")
+    parser.add_argument("task", nargs="?", help="What you want done. Omit for an interactive session.")
+    parser.add_argument("-w", "--workspace", default=None,
+                        help="Directory the agent may touch. Defaults to the current one.")
+    parser.add_argument("-y", "--yes", action="store_true", help="Run commands without asking.")
+    parser.add_argument("-v", "--verbose", action="store_true", help="Print each tool result.")
+    args = parser.parse_args()
+
+    workspace = confine.configure(args.workspace, args.yes)
+    print(f"braze  ·  {workspace}  ·  {MODEL}\n")
+
+    client = OpenAI(api_key=get_api_key())
+    messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+
+    if args.task is None:
+        return repl(client, messages, args.verbose)
+
+    messages.append({"role": "user", "content": args.task})
+    run_task(client, messages, args.verbose)
     return 0
+
