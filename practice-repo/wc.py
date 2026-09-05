@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from pathlib import Path
 
@@ -21,17 +22,26 @@ def format_counts(name: str, counts: dict[str, int]) -> str:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="wc", description="Count lines, words and characters.")
+    parser.add_argument("--json", action="store_true", help="Emit counts as a JSON array.")
     parser.add_argument("paths", nargs="+", help="Files to count.")
     args = parser.parse_args(argv)
 
     exit_code = 0
+    json_rows: list[dict[str, int | str]] = []
     for path in args.paths:
         file = Path(path)
         if not file.is_file():
             print(f"wc: {path}: no such file", file=sys.stderr)
             exit_code = 1
             continue
-        print(format_counts(path, count(file.read_text(encoding="utf-8"))))
+        counts = count(file.read_text(encoding="utf-8"))
+        if args.json:
+            json_rows.append({"name": path, **counts})
+        else:
+            print(format_counts(path, counts))
+
+    if args.json:
+        print(json.dumps(json_rows))
     return exit_code
 
 
