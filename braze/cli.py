@@ -6,6 +6,7 @@ import time
 from dotenv import load_dotenv
 from openai import OpenAI
 
+from . import ui
 from .config import get_api_key
 from .tools import confine
 from .tools.edit_file import edit_file
@@ -91,6 +92,42 @@ TOOL_SCHEMAS = [
 ]
 
 
+ARG_SHOWN = {
+    "read_file": "file_path", "write_file": "path", "edit_file": "path",
+    "list_dir": "path", "grep": "pattern", "run_command": "command", "finish": None,
+}
+
+
+def describe(name: str, raw_arguments: str) -> str:
+    """The one argument worth showing. A JSON blob is not scannable."""
+    key = ARG_SHOWN.get(name)
+    if key is None:
+        return ""
+    try:
+        value = str(json.loads(raw_arguments).get(key, ""))
+    except json.JSONDecodeError:
+        return raw_arguments[:40]
+    return value if len(value) <= 44 else value[:41] + "..."
+
+
+def summarise(name: str, result: str) -> str:
+    """A short right-hand note saying what came back."""
+    if result.startswith("Error:"):
+        return "failed"
+    if name == "read_file":
+        return f"{len(result.splitlines())} lines"
+    if name in {"write_file", "edit_file"}:
+        return result.split("(")[-1].rstrip(")") if "(" in result else "ok"
+    if name == "list_dir":
+        return f"{len(result.splitlines())} entries"
+    if name == "grep":
+        return "no matches" if result.startswith("no matches") else f"{len(result.splitlines())} hits"
+    if name == "run_command":
+        first = result.splitlines()[0] if result else ""
+        return first.replace("exit code: ", "exit ")
+    return ""
+
+
 def run_tool(name: str, raw_arguments: str) -> str:
     """Run one tool call. Never raises, because a raise here kills the whole run."""
     fn = TOOL_FUNCTIONS.get(name)
@@ -118,44 +155,50 @@ def run_task(client, messages, verbose: bool) -> None:
 
     while True:
         if turns >= MAX_TURNS:
-            print(f"stopped: hit the turn cap ({MAX_TURNS})")
+            ui.stopped(f"hit the turn cap ({MAX_TURNS})")
             break
         if time.monotonic() - started >= MAX_SECONDS:
-            print(f"stopped: hit the time cap ({MAX_SECONDS}s)")
+            ui.stopped(f"hit the time cap ({MAX_SECONDS}s)")
             break
         if tokens >= MAX_TOKENS:
-            print(f"stopped: hit the token cap ({MAX_TOKENS})")
+            ui.stopped(f"hit the token cap ({MAX_TOKENS})")
             break
 
         turns += 1
-        completion = client.chat.completions.create(
-            model=MODEL, tools=TOOL_SCHEMAS, messages=messages,
-        )
+        with ui.Spinner():
+            completion = client.chat.completions.create(
+                model=MODEL, tools=TOOL_SCHEMAS, messages=messages,
+            )
         tokens += completion.usage.total_tokens
 
         message = completion.choices[0].message
         messages.append(message)
 
         if not message.tool_calls:
-            print(f"\n{message.content}")
+            ui.answer(message.content or "(no reply)")
             break
 
         done = False
         for call in message.tool_calls:
-            print(f"  -> {call.function.name} {call.function.arguments[:90]}")
-            result = run_tool(call.function.name, call.function.arguments)
+            name = call.function.name
+            result = run_tool(name, call.function.arguments)
+            failed = result.startswith("Error:")
+
+            if name != "finish":
+                ui.tool_call(name, describe(name, call.function.arguments),
+                             summarise(name, result), failed)
+            if failed or verbose:
+                ui.tool_detail(result, failed)
+
             messages.append({"role": "tool", "tool_call_id": call.id, "content": result})
 
-            if verbose or result.startswith("Error:"):
-                print(f"     {result[:400]}")
-
-            if call.function.name == "finish" and not result.startswith("Error:"):
-                print(f"\n{result}")
+            if name == "finish" and not failed:
+                ui.finished(result)
                 done = True
         if done:
             break
 
-    print(f"\n\033[2m{turns} turns, {tokens} tokens, {time.monotonic() - started:.1f}s\033[0m")
+    ui.footer(turns, tokens, time.monotonic() - started)
 
 
 HELP = """  /help    this
@@ -168,7 +211,7 @@ def repl(client, messages, verbose: bool) -> int:
     print("Type a task. /help for commands, /exit to leave.\n")
     while True:
         try:
-            line = input("\033[1m> \033[0m").strip()
+            line = ui.prompt().strip()
         except (EOFError, KeyboardInterrupt):
             print("\nbye")
             return 0
@@ -206,7 +249,7 @@ def main() -> int:
     args = parser.parse_args()
 
     workspace = confine.configure(args.workspace, args.yes)
-    print(f"braze  ·  {workspace}  ·  {MODEL}\n")
+    ui.header(workspace, MODEL)
 
     client = OpenAI(api_key=get_api_key())
     messages = [{"role": "system", "content": SYSTEM_PROMPT}]
