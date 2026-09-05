@@ -1,85 +1,74 @@
 # Toolsmith
 
-A terminal coding agent that reads, edits and runs code in a real repository. The
-ReAct loop is written by hand against the raw chat-completions API. There is no
-agent framework anywhere in this project, which is the whole point: the message
-list, the tool schemas, the dispatch and every termination rule are visible in
-one file you can read in a sitting.
+A terminal coding agent you point at a directory of real code. You give it a
+task in English, it reads files, edits them, runs the tests, and keeps going
+until they pass.
 
-```
-$ python toolsmith.py "Add a --json flag to the wc CLI and make the failing tests pass" --yes
+The catch: it is not written yet. `toolsmith.py` is ten numbered steps and no
+implementation. The point of this project is that you write the loop by hand,
+against the raw chat-completions API, with no agent framework anywhere. Every
+framework you have used is wrapping about fifteen lines, and you do not really
+know what those lines do until you have written them and watched them fail.
 
-→ run_command {"command":"pytest -q","reason":"run tests to see failures"}
-→ read_file   {"path":"wc.py","start_line":1,"max_lines":400}
-→ read_file   {"path":"test_wc.py","start_line":1,"max_lines":400}
-→ write_file  {"path":"wc.py", ...}
-→ run_command {"command":"pytest -q","reason":"run full test suite"}
-→ finish      {"summary":"Added --json flag ... all 6 tests passed."}
-
-8 turns, 22320 tokens, 31.1s
-```
-
-## Running it
+## Setup
 
 ```bash
-python -m venv venv && ./venv/bin/pip install -r requirements.txt
-cp .env.example .env      # then put an OpenAI-compatible key in it
-./venv/bin/python toolsmith.py "your task here"
+python3 -m venv venv && ./venv/bin/pip install -r requirements.txt
+cp .env.example .env      # put an OpenAI-compatible key in it
 ```
 
-The workspace defaults to `sandbox/`, a small word-count CLI with a test suite
-where two tests fail because a `--json` flag does not exist yet. It is a real
-task with a real pass or fail signal, which makes it a much better target than a
-toy prompt.
+Then open `toolsmith.py` and start at STEP 1.
 
-Useful flags:
+## The practice repo
 
-| Flag | What it does |
-|---|---|
-| `-w, --workspace` | The only directory the agent may touch |
-| `-v, --verbose` | Dump the raw message list every turn |
-| `-y, --yes` | Run shell commands without asking |
-| `--max-iterations` | Turn cap, default 25 |
-| `--max-seconds` | Wall-clock cap, default 300 |
-| `--max-tokens` | Token cap, default 200,000 |
+`practice-repo/` is a small word-count CLI with a test suite. Six tests, four
+pass, two fail because a `--json` flag does not exist yet.
 
-`TOOLSMITH_BASE_URL` points at any OpenAI-compatible provider, so OpenRouter and
-Groq work without a code change.
+```bash
+cd practice-repo && ../venv/bin/python -m pytest -q
+# 2 failed, 4 passed
+```
 
-## The six tools
+That is the target. Your agent is finished when this works without you
+touching anything:
 
-`read_file`, `write_file`, `list_dir`, `grep`, `run_command`, `finish`.
+```bash
+./venv/bin/python toolsmith.py \
+  "Add a --json flag to the wc CLI and make the failing tests pass" --yes
+```
 
-Each one's arguments are a pydantic model whose docstring becomes the tool
-description and whose `model_json_schema()` becomes the parameters the API sees.
-One definition, no schema kept in sync by hand.
+and `pytest` then reports 6 passed.
 
-Every path is resolved against the workspace root and refused if it escapes.
-`run_command` asks for approval unless you pass `--yes`.
+The failing tests matter more than they look. An agent that writes code will
+happily tell you it succeeded. Tests are a verdict it cannot argue with: either
+the process exits 0 or it does not. It is also the loop's whole reason to
+exist, because the agent runs the tests, reads the failure, and tries again.
 
-## Three things worth knowing
+Reset the repo between attempts with `git checkout practice-repo/`.
 
-**Termination is enforced in code, not asked for in the prompt.** A turn cap, a
-wall-clock cap and a token budget, all checked *before* each model call rather
-than after, because checking after has already spent the money. The interesting
-failure is not the run that crashes, it is the run that ends successfully having
-done nothing.
+## Two meanings of "sandbox"
 
-**A tool result is the entire view the model gets of what happened.** Results are
-truncated in the middle so the head and the tail survive, errors come back as
-readable sentences that say what to do next rather than as stack traces, and
-`read_file` numbers its lines so the model can refer to them.
+Worth separating, because the word gets used for both and they are not the same
+strength of thing.
 
-**The environment the agent runs commands in is part of the tool design.** The
-first working run took 10 turns and left a stray file behind, because `pytest`
-was not on `PATH` inside `run_command`: launching via `venv/bin/python` does not
-put `venv/bin` on the path. The model got a legible "command not found", decided
-pytest was unavailable, wrote its own test harness, and verified against that
-instead. Prepending the running interpreter's directory to `PATH` fixed it, and
-the same task then took 8 turns with the real test suite and no leftovers. The
-bug was in the tool, not the prompt.
+**Confinement.** Keeping the agent inside one directory, so it cannot read your
+SSH keys or write to `/etc`. That is STEP 7, and it is a check inside your own
+process. If your path check has a bug, there is nothing behind it. Useful,
+weak.
+
+**Isolation.** Running the agent's commands inside a container or a microVM
+with no network, a read-only filesystem, and a memory limit, so a successful
+escape still lands somewhere that cannot hurt you. That is a real boundary
+enforced by the kernel rather than by your `if` statement, and it is a later
+project.
+
+This project does confinement. Knowing that is not the strong version is part
+of the lesson.
 
 ## What this is
 
-Project 01 of a roadmap toward agentic AI engineering. The next one gives this
+Project 01 of a roadmap toward agentic AI engineering. Project 02 gives this
 agent memory that survives being killed mid-task.
+
+A finished implementation lives on the `reference` branch. Do not read it until
+yours runs, then diff and disagree with it.
