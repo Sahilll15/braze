@@ -7,10 +7,13 @@ The ReAct loop is written by hand against the raw chat-completions API. No agent
 framework anywhere. Everything a framework would do for you, the transcript, the
 tool schemas, the dispatch, the stopping rules, is visible in `braze/cli.py`.
 
+<video src="https://github.com/Sahilll15/braze/raw/main/docs/demo.mp4" controls muted playsinline width="900"></video>
+
 ![braze solving a task](docs/demo.gif)
 
 <sub>Two failing tests, one sentence of instruction, seven turns.
-[Full-quality recording](docs/demo.mp4) · [the tape that shot it](docs/demo.tape)</sub>
+The player above needs JavaScript, the gif does not.
+[The tape that shot it](docs/demo.tape) re-records the demo whenever the interface changes.</sub>
 
 ## Install
 
