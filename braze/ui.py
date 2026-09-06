@@ -106,13 +106,14 @@ class Spinner:
 
     FRAMES = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
 
-    def __init__(self, label: str = "thinking"):
+    def __init__(self, label: str = "thinking", enabled: bool = True):
         self.label = label
+        self.enabled = enabled
         self._stop = threading.Event()
         self._thread = None
 
     def __enter__(self):
-        if sys.stdout.isatty():
+        if self.enabled and sys.stdout.isatty():
             self._thread = threading.Thread(target=self._spin, daemon=True)
             self._thread.start()
         return self

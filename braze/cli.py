@@ -1,5 +1,6 @@
 import argparse
 import json
+from dataclasses import dataclass, field
 import readline  # noqa: F401  gives input() arrow-key history
 import time
 
@@ -147,25 +148,50 @@ def run_tool(name: str, raw_arguments: str) -> str:
         return f"Error: {type(exc).__name__}: {exc}"
 
 
-def run_task(client, messages, verbose: bool) -> None:
+@dataclass
+class RunResult:
+    """What a run did, as data. The UI renders this; an eval scores it."""
+
+    turns: int = 0
+    tokens: int = 0
+    seconds: float = 0.0
+    tool_calls: list[str] = field(default_factory=list)
+    errors: list[str] = field(default_factory=list)
+    answer: str = ""
+    stopped_reason: str = ""
+
+    @property
+    def finished(self) -> bool:
+        """Whether the agent declared itself done, which is not the same as correct."""
+        return "finish" in self.tool_calls
+
+
+def run_task(client, messages, verbose: bool, quiet: bool = False) -> RunResult:
     """Drive one task to completion, appending to `messages` in place."""
+    result = RunResult()
     turns = 0
     tokens = 0
     started = time.monotonic()
 
     while True:
         if turns >= MAX_TURNS:
-            ui.stopped(f"hit the turn cap ({MAX_TURNS})")
+            result.stopped_reason = f"turn cap ({MAX_TURNS})"
+            if not quiet:
+                ui.stopped(result.stopped_reason)
             break
         if time.monotonic() - started >= MAX_SECONDS:
-            ui.stopped(f"hit the time cap ({MAX_SECONDS}s)")
+            result.stopped_reason = f"time cap ({MAX_SECONDS}s)"
+            if not quiet:
+                ui.stopped(result.stopped_reason)
             break
         if tokens >= MAX_TOKENS:
-            ui.stopped(f"hit the token cap ({MAX_TOKENS})")
+            result.stopped_reason = f"token cap ({MAX_TOKENS})"
+            if not quiet:
+                ui.stopped(result.stopped_reason)
             break
 
         turns += 1
-        with ui.Spinner():
+        with ui.Spinner(enabled=not quiet):
             completion = client.chat.completions.create(
                 model=MODEL, tools=TOOL_SCHEMAS, messages=messages,
             )
@@ -175,30 +201,43 @@ def run_task(client, messages, verbose: bool) -> None:
         messages.append(message)
 
         if not message.tool_calls:
-            ui.answer(message.content or "(no reply)")
+            result.answer = message.content or ""
+            if not quiet:
+                ui.answer(result.answer or "(no reply)")
             break
 
         done = False
         for call in message.tool_calls:
             name = call.function.name
-            result = run_tool(name, call.function.arguments)
-            failed = result.startswith("Error:")
+            output = run_tool(name, call.function.arguments)
+            failed = output.startswith("Error:")
 
-            if name != "finish":
-                ui.tool_call(name, describe(name, call.function.arguments),
-                             summarise(name, result), failed)
-            if failed or verbose:
-                ui.tool_detail(result, failed)
+            result.tool_calls.append(name)
+            if failed:
+                result.errors.append(output)
 
-            messages.append({"role": "tool", "tool_call_id": call.id, "content": result})
+            if not quiet:
+                if name != "finish":
+                    ui.tool_call(name, describe(name, call.function.arguments),
+                                 summarise(name, output), failed)
+                if failed or verbose:
+                    ui.tool_detail(output, failed)
+
+            messages.append({"role": "tool", "tool_call_id": call.id, "content": output})
 
             if name == "finish" and not failed:
-                ui.finished(result)
+                result.answer = output
+                if not quiet:
+                    ui.finished(output)
                 done = True
         if done:
             break
 
-    ui.footer(turns, tokens, time.monotonic() - started)
+    result.turns, result.tokens = turns, tokens
+    result.seconds = time.monotonic() - started
+    if not quiet:
+        ui.footer(turns, tokens, result.seconds)
+    return result
 
 
 HELP = """  /help    this
