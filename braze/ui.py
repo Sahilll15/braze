@@ -134,3 +134,37 @@ class Spinner:
             sys.stdout.write(f"\r  {DIM}{frame} {self.label} {elapsed:.0f}s{OFF}\033[K")
             sys.stdout.flush()
             time.sleep(0.08)
+
+
+def runs(rows) -> None:
+    """One line per run. The id column is short because that is what you retype."""
+    _out()
+    if not rows:
+        _out(f"  {DIM}no runs yet{OFF}")
+        _out()
+        return
+    _out(f"  {DIM}{'id':<14}{'when':<22}{'status':<14}task{OFF}")
+    rule()
+    for run in rows:
+        mark = f"{OK}{DONE}{OFF}" if run.status == "finished" else f"{ACCENT}{CALL}{OFF}"
+        task = run.task if len(run.task) <= 34 else run.task[:31] + "..."
+        when = run.created.replace("T", " ").replace("+00:00", "")
+        _out(f"  {ACCENT}{run.id:<12}{OFF}  {DIM}{when:<20}{OFF}  {mark} {run.status:<12}{task}")
+    rule()
+    _out(f"  {DIM}braze --resume <id> to pick one back up{OFF}")
+    _out()
+
+
+def resumed(run_id: str, task: str, notes: list[str]) -> None:
+    _out()
+    _out(f"  {ACCENT}{BOLD}resuming{OFF} {DIM}{run_id}{OFF}")
+    for line in textwrap.wrap(task, width=WIDTH - 4):
+        _out(f"  {line}")
+    for note in notes:
+        _out(f"  {TOOL}{CALL}{OFF} {DIM}{note}{OFF}")
+    rule()
+
+
+def compacted(before: int, after: int) -> None:
+    _out(f"  {DIM}compacted  {before:,} → {after:,} tokens  "
+         f"(saved {before - after:,}){OFF}")
