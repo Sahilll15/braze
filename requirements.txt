@@ -3,3 +3,4 @@ pydantic
 rich
 python-dotenv
 pytest
+tiktoken
